@@ -1,0 +1,4 @@
+node_modules/
+.pgnet-lens/
+.env
+*.log

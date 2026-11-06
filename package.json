@@ -1,0 +1,38 @@
+{
+  "name": "pgnet-lens",
+  "version": "0.1.0",
+  "description": "A free local flight recorder for Supabase webhooks and pg_net: keeps history past 6 hours and explains failures in plain English.",
+  "type": "module",
+  "bin": {
+    "pgnet-lens": "bin/pgnet-lens.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.3"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": [
+    "supabase",
+    "pg_net",
+    "webhooks",
+    "postgres",
+    "debugging",
+    "cli"
+  ],
+  "author": "Nivan Panghal",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Nivan-Panghal/pgnet-lens.git"
+  },
+  "dependencies": {
+    "pg": "^8.11.0"
+  }
+}

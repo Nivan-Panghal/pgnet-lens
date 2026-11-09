@@ -4,6 +4,7 @@ import { Connection, UserError, describeTarget, resolveDatabaseUrl } from "../sr
 import { runDoctor } from "../src/doctor.js";
 import { runInit } from "../src/init.js";
 import { runList, runShow, runWatch } from "../src/commands.js";
+import { runServe } from "../src/server.js";
 
 const HELP = `
 pgnet-lens - a free local flight recorder for Supabase webhooks and pg_net.
@@ -13,6 +14,7 @@ sent. pgnet-lens copies them to your own computer and explains failures.
 
 Usage:
   pgnet-lens doctor            Check that the database can be read
+  pgnet-lens serve             Open a page in your browser (also keeps copying)
   pgnet-lens watch             Copy new replies to this computer (Ctrl+C to stop)
   pgnet-lens list              Show saved history
   pgnet-lens show <id>         Show everything about one request
@@ -21,9 +23,11 @@ Usage:
 Options:
   --db <link>        Database link (or set the DATABASE_URL variable)
   --dir <folder>     Where history is saved (default: .pgnet-lens)
-  --interval <sec>   watch: seconds between checks (default 2)
+  --interval <sec>   watch/serve: seconds between checks (default 2)
+  --port <number>    serve: port for the page (default 7411)
+  --no-open          serve: do not open the browser automatically
   --once             watch: copy once and stop
-  --no-bodies        watch: do not save message contents
+  --no-bodies        watch/serve: do not save message contents
   --failed           list: only show problems
   --limit <n>        list: how many rows (default 20)
   --full             show: do not cut long contents
@@ -37,6 +41,8 @@ const options = {
   db: { type: "string" },
   dir: { type: "string" },
   interval: { type: "string" },
+  port: { type: "string" },
+  "no-open": { type: "boolean" },
   once: { type: "boolean" },
   "no-bodies": { type: "boolean" },
   failed: { type: "boolean" },
@@ -74,7 +80,7 @@ async function main() {
     return 0;
   }
 
-  const known = ["doctor", "watch", "list", "show", "init"];
+  const known = ["doctor", "watch", "serve", "list", "show", "init"];
   if (!known.includes(command)) {
     throw new UserError(`Unknown command "${command}". Run with --help.`);
   }
@@ -96,6 +102,7 @@ async function main() {
     if (command === "doctor") return await runDoctor(conn, target);
     if (command === "init") return await runInit(conn, target, flags);
     if (command === "watch") return await runWatch(conn, target, url, flags);
+    if (command === "serve") return await runServe(conn, target, url, flags);
   } finally {
     await conn.close();
   }

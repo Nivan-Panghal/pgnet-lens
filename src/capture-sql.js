@@ -8,6 +8,7 @@ export const CAPTURE_SUMMARY = [
   "Creates helper functions pgnet_lens.http_post / http_get / http_delete.",
   "  They work exactly like net.http_post / net.http_get / net.http_delete,",
   "  but also remember the request. Use them in place of the net.* ones.",
+  "Creates pgnet_lens.resend(id) to send a remembered request again.",
   "Creates pgnet_lens.cleanup() to delete old remembered requests.",
   "Only the database owner and service_role can use any of it.",
   "Does NOT change any of your existing tables, triggers or webhooks.",
@@ -128,6 +129,49 @@ begin
   delete from pgnet_lens.requests where created_at < now() - older_than;
   get diagnostics n = row_count;
   return n;
+end;
+$fn$;
+
+create or replace function pgnet_lens.resend(original_id bigint)
+returns bigint
+language plpgsql
+as $fn$
+declare
+  r pgnet_lens.requests%rowtype;
+  rid bigint;
+begin
+  select * into r from pgnet_lens.requests where request_id = original_id;
+  if not found then
+    raise exception 'No remembered request with id %', original_id;
+  end if;
+
+  if r.method = 'POST' then
+    rid := pgnet_lens.http_post(
+      r.url,
+      coalesce(r.body, '{}'::jsonb),
+      coalesce(r.params, '{}'::jsonb),
+      coalesce(r.headers, '{"Content-Type": "application/json"}'::jsonb),
+      coalesce(r.timeout_milliseconds, 5000)
+    );
+  elsif r.method = 'GET' then
+    rid := pgnet_lens.http_get(
+      r.url,
+      coalesce(r.params, '{}'::jsonb),
+      coalesce(r.headers, '{}'::jsonb),
+      coalesce(r.timeout_milliseconds, 5000)
+    );
+  elsif r.method = 'DELETE' then
+    rid := pgnet_lens.http_delete(
+      r.url,
+      coalesce(r.params, '{}'::jsonb),
+      coalesce(r.headers, '{}'::jsonb),
+      coalesce(r.timeout_milliseconds, 5000),
+      r.body
+    );
+  else
+    raise exception 'Cannot send a % request again', r.method;
+  end if;
+  return rid;
 end;
 $fn$;
 

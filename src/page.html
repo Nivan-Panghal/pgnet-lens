@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pgnet-lens</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff; --fg: #15171c; --muted: #6a7080; --line: #e2e5ec; --card: #f6f7f9;
+    --ok: #0b7a34; --ok-bg: #e4f5ea;
+    --warn: #8a5a00; --warn-bg: #fdf0d5;
+    --fail: #b3261e; --fail-bg: #fde7e5;
+    --accent: #2457d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --fg: #e8eaf0; --muted: #98a0b3; --line: #262a33; --card: #171a21;
+      --ok: #5fd38a; --ok-bg: #12301f;
+      --warn: #f0c15a; --warn-bg: #33270c;
+      --fail: #ff8a80; --fail-bg: #3a1714;
+      --accent: #7aa2ff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: baseline;
+           padding: 14px 20px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 18px; margin: 0; }
+  .muted { color: var(--muted); }
+  #banner { margin: 12px 20px 0; padding: 10px 14px; border-radius: 8px;
+            background: var(--fail-bg); color: var(--fail); }
+  #note { margin: 12px 20px 0; padding: 10px 14px; border-radius: 8px;
+          background: var(--card); color: var(--muted); }
+  main { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+         gap: 20px; padding: 16px 20px 40px; align-items: start; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
+  button { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line);
+           background: var(--card); color: var(--fg); cursor: pointer; }
+  button.active { border-color: var(--accent); color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; color: var(--muted); font-weight: 600; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover { background: var(--card); }
+  tbody tr.sel { background: var(--card); outline: 2px solid var(--accent); outline-offset: -2px; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px;
+           font-weight: 600; white-space: nowrap; }
+  .ok { background: var(--ok-bg); color: var(--ok); }
+  .warn { background: var(--warn-bg); color: var(--warn); }
+  .fail { background: var(--fail-bg); color: var(--fail); }
+  #detail { border: 1px solid var(--line); border-radius: 12px; padding: 16px;
+            background: var(--card); min-height: 160px; }
+  #detail h2 { margin: 0 0 6px; font-size: 16px; }
+  dl { display: grid; grid-template-columns: 100px 1fr; gap: 4px 12px; margin: 12px 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; overflow-wrap: anywhere; }
+  h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+       margin: 16px 0 6px; }
+  pre { margin: 0; padding: 10px; border-radius: 8px; background: var(--bg);
+        border: 1px solid var(--line); overflow: auto; max-height: 260px;
+        white-space: pre-wrap; overflow-wrap: anywhere;
+        font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .empty { padding: 24px; color: var(--muted); text-align: center; }
+  .msg { margin-top: 10px; }
+  .msg.bad { color: var(--fail); }
+  .msg.good { color: var(--ok); }
+</style>
+</head>
+<body>
+<header>
+  <h1>pgnet-lens</h1>
+  <span id="target" class="muted"></span>
+  <span id="sync" class="muted"></span>
+</header>
+<div id="banner" hidden></div>
+<div id="note" hidden></div>
+<main>
+  <section>
+    <div class="toolbar">
+      <button id="fAll" class="active" type="button">All</button>
+      <button id="fProblems" type="button">Problems only</button>
+    </div>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>When</th><th>Result</th><th>From</th></tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div id="empty" class="empty" hidden>
+      Nothing here yet. When a webhook runs, it will appear in a few seconds.
+    </div>
+  </section>
+  <section id="detail">
+    <div class="empty">Click a row to see what happened.</div>
+  </section>
+</main>
+<script>
+(function () {
+  "use strict";
+
+  // The private key arrives in the link. Keep it for this tab and hide it from the address bar.
+  var token = new URLSearchParams(location.search).get("t") || "";
+  try {
+    if (token) {
+      sessionStorage.setItem("pgnet-token", token);
+      history.replaceState(null, "", location.pathname);
+    } else {
+      token = sessionStorage.getItem("pgnet-token") || "";
+    }
+  } catch (e) { /* storage may be blocked; the key then lives only in memory */ }
+
+  var state = { filter: "all", selected: null, detailStamp: null, lastDetail: null, notice: null, busy: false };
+
+  function $(id) { return document.getElementById(id); }
+
+  function el(tag, className, text) {
+    var node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined && text !== null) node.textContent = text;   // text only, never HTML
+    return node;
+  }
+
+  function api(path, method) {
+    return fetch(path, {
+      method: method || "GET",
+      headers: { "X-Token": token },
+      cache: "no-store"
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        if (!res.ok) throw new Error(data.error || "Request failed (" + res.status + ")");
+        return data;
+      });
+    });
+  }
+
+  function when(iso) {
+    if (!iso) return "-";
+    var d = new Date(iso);
+    return isNaN(d.getTime()) ? "-" : d.toLocaleString();
+  }
+
+  function pretty(value) {
+    if (value === null || value === undefined) return "(none)";
+    if (typeof value === "string") {
+      try { return JSON.stringify(JSON.parse(value), null, 2); } catch (e) { return value; }
+    }
+    return JSON.stringify(value, null, 2);
+  }
+
+  function badge(label, tone) { return el("span", "badge " + tone, label); }
+
+  // ---------------------------------------------------------------- list
+  function renderList(items) {
+    var body = $("rows");
+    body.textContent = "";
+    $("empty").hidden = items.length > 0;
+    items.forEach(function (it) {
+      var tr = document.createElement("tr");
+      tr.setAttribute("data-id", it.id);
+      if (it.id === state.selected) tr.className = "sel";
+      var label = it.label + (it.tone === "ok" && it.status !== null ? " " + it.status : "");
+      var tdResult = el("td");
+      tdResult.appendChild(badge(label, it.tone));
+      tr.appendChild(el("td", null, "#" + it.id));
+      tr.appendChild(el("td", "muted", when(it.time)));
+      tr.appendChild(tdResult);
+      tr.appendChild(el("td", null, it.from));
+      tr.addEventListener("click", function () { select(it.id); });
+      body.appendChild(tr);
+    });
+  }
+
+  function select(id) {
+    state.selected = id;
+    state.detailStamp = null;
+    state.notice = null;
+    var rows = $("rows").children;
+    for (var i = 0; i < rows.length; i++) {
+      rows[i].className = rows[i].getAttribute("data-id") === id ? "sel" : "";
+    }
+    loadDetail();
+  }
+
+  // -------------------------------------------------------------- detail
+  function loadDetail() {
+    var id = state.selected;
+    if (!id) return;
+    api("/api/requests/" + encodeURIComponent(id)).then(function (d) {
+      if (state.selected !== id) return;      // the user clicked something else meanwhile
+      state.detailStamp = d.stamp;
+      state.lastDetail = d;
+      renderDetail(d);
+    }).catch(function (e) {
+      var box = $("detail");
+      box.textContent = "";
+      box.appendChild(el("div", "empty", e.message));
+    });
+  }
+
+  function addPre(box, title, value) {
+    box.appendChild(el("h3", null, title));
+    box.appendChild(el("pre", null, pretty(value)));
+  }
+
+  function renderDetail(d) {
+    var box = $("detail");
+    box.textContent = "";
+
+    var title = el("h2");
+    title.appendChild(document.createTextNode("Request #" + d.id + "  "));
+    title.appendChild(badge(d.label, d.tone));
+    box.appendChild(title);
+    box.appendChild(el("div", null, d.text));
+
+    var dl = el("dl");
+    function row(name, value) { dl.appendChild(el("dt", null, name)); dl.appendChild(el("dd", null, value)); }
+    row("When", when(d.time));
+    row("Came from", d.table
+      ? d.table + (d.hookName ? " (webhook \u201c" + d.hookName + "\u201d)" : "")
+      : (d.source === "recorded" ? "your own SQL code (not a Database Webhook)" : "unknown"));
+    row("Sent to", d.url ? (d.method || "?") + " " + d.url : "not recorded");
+    box.appendChild(dl);
+
+    if (d.requestHeaders) addPre(box, "Headers sent", d.requestHeaders);
+    if (d.source === "recorded") addPre(box, "Data sent", d.requestBody);
+    else box.appendChild(el("p", "muted", "Data sent: not recorded. Supabase does not keep what dashboard webhooks send."));
+
+    box.appendChild(el("h3", null, "Reply"));
+    box.appendChild(el("div", null, d.hasResponse
+      ? (d.status !== null && d.status !== undefined ? "Status " + d.status : "No status")
+      : "No reply saved"));
+    if (d.error) box.appendChild(el("div", "muted", "Error: " + d.error));
+    if (d.responseHeaders) addPre(box, "Reply headers", d.responseHeaders);
+    if (d.hasResponse) {
+      addPre(box, "Reply body", d.responseBody);
+      if (d.responseBodyTruncated) box.appendChild(el("p", "muted", "The saved copy was shortened to 20000 characters."));
+    }
+
+    box.appendChild(el("h3", null, "Actions"));
+    var button = el("button", "primary", "Send again");
+    button.type = "button";
+    button.disabled = !d.canResend || state.busy;
+    button.addEventListener("click", function () { sendAgain(d, button); });
+    box.appendChild(button);
+    if (!d.canResend) {
+      box.appendChild(el("div", "msg muted",
+        "This one cannot be sent again because its data was not recorded. " +
+        "Requests sent with pgnet_lens.http_post can."));
+    }
+    if (state.notice && state.notice.id === d.id) {
+      box.appendChild(el("div", "msg " + (state.notice.good ? "good" : "bad"), state.notice.text));
+    }
+  }
+
+  function sendAgain(d, button) {
+    var ok = window.confirm(
+      "Send this request again?\n\n" + (d.method || "") + " " + (d.url || "") +
+      "\n\nThe other server will receive it a second time.");
+    if (!ok) return;
+    state.busy = true;
+    button.disabled = true;
+    api("/api/requests/" + encodeURIComponent(d.id) + "/resend", "POST").then(function (r) {
+      state.notice = { id: d.id, good: true, text: "Sent again as #" + r.newId + ". It will appear in the list in a few seconds." };
+    }).catch(function (e) {
+      state.notice = { id: d.id, good: false, text: e.message };
+    }).then(function () {
+      state.busy = false;
+      if (state.lastDetail && state.selected === d.id) renderDetail(state.lastDetail);
+      refresh();
+    });
+  }
+
+  // ------------------------------------------------------------- polling
+  function showError(message) {
+    var banner = $("banner");
+    banner.textContent = message;
+    banner.hidden = false;
+  }
+
+  function renderStatus(s) {
+    $("target").textContent = "Watching " + s.target.host + " / " + s.target.database;
+    $("sync").textContent = s.lastSyncAt ? "Last checked " + new Date(s.lastSyncAt).toLocaleTimeString() : "Starting\u2026";
+    if (s.lastError) showError("Could not read the database: " + s.lastError); else $("banner").hidden = true;
+    var note = $("note");
+    if (!s.capture) {
+      note.textContent = "Optional: run `pgnet-lens init` to also remember what is sent. It is needed for \u201cSend again\u201d.";
+      note.hidden = false;
+    } else {
+      note.hidden = true;
+    }
+  }
+
+  function refresh() {
+    if (refresh.running) return;
+    refresh.running = true;
+    Promise.all([
+      api("/api/status"),
+      api("/api/requests?filter=" + (state.filter === "problems" ? "problems" : "all"))
+    ]).then(function (parts) {
+      renderStatus(parts[0]);
+      var items = parts[1].items;
+      renderList(items);
+      if (state.selected && state.detailStamp !== null) {
+        var current = items.filter(function (i) { return i.id === state.selected; })[0];
+        if (current && current.stamp !== state.detailStamp) loadDetail();
+      }
+    }).catch(function (e) {
+      showError(e.message);
+    }).then(function () { refresh.running = false; });
+  }
+
+  function setFilter(name) {
+    state.filter = name;
+    $("fAll").className = name === "all" ? "active" : "";
+    $("fProblems").className = name === "problems" ? "active" : "";
+    refresh();
+  }
+  $("fAll").addEventListener("click", function () { setFilter("all"); });
+  $("fProblems").addEventListener("click", function () { setFilter("problems"); });
+
+  refresh();
+  setInterval(refresh, 2000);
+})();
+</script>
+</body>
+</html>

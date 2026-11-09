@@ -55,3 +55,12 @@ test("renderTable lines up columns", () => {
   assert.match(text, /A\s+B/);
   assert.match(text, /long…/);
 });
+
+test("CORS headers are not mistaken for secrets", () => {
+  const out = redactHeaders({
+    "access-control-allow-credentials": "true",
+    "Set-Cookie": "a=b",
+  });
+  assert.equal(out["access-control-allow-credentials"], "true");
+  assert.equal(out["Set-Cookie"], "[hidden]");
+});

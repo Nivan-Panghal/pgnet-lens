@@ -32,6 +32,10 @@
     "type": "git",
     "url": "git+https://github.com/Nivan-Panghal/pgnet-lens.git"
   },
+  "homepage": "https://github.com/Nivan-Panghal/pgnet-lens#readme",
+  "bugs": {
+    "url": "https://github.com/Nivan-Panghal/pgnet-lens/issues"
+  },
   "dependencies": {
     "pg": "^8.11.0"
   }
